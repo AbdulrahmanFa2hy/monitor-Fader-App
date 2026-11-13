@@ -775,8 +775,25 @@ namespace MonitorFader
             bool wasMinimized = NativeMethods.IsIconic(hWnd);
             bool wasMaximized = NativeMethods.IsZoomed(hWnd);
 
+            NativeMethods.ReleaseCapture();
+            NativeMethods.AllowSetForegroundWindow(NativeMethods.ASFW_ANY);
+
             if (wasMinimized || wasMaximized)
+            {
                 NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
+                if (NativeMethods.IsIconic(hWnd) || NativeMethods.IsZoomed(hWnd))
+                {
+                    IntPtr sysRes;
+                    NativeMethods.SendMessageTimeout(
+                        hWnd,
+                        NativeMethods.WM_SYSCOMMAND,
+                        new IntPtr(NativeMethods.SC_RESTORE),
+                        IntPtr.Zero,
+                        NativeMethods.SMTO_ABORTIFHUNG,
+                        150,
+                        out sysRes);
+                }
+            }
 
             NativeMethods.RECT rect;
             if (!NativeMethods.GetWindowRect(hWnd, out rect))

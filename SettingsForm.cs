@@ -101,7 +101,8 @@ namespace MonitorFader
             BackColor = Color.FromArgb(248, 248, 248);
 
             BuildUi();
-            AutoScaleMode = AutoScaleMode.None;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             ResumeLayout(false);
             PerformLayout();
 

@@ -41,7 +41,6 @@ namespace MonitorFader
                 CreateParams cp = base.CreateParams;
                 cp.ExStyle |= NativeMethods.WS_EX_LAYERED
                             | NativeMethods.WS_EX_TOOLWINDOW
-                            | NativeMethods.WS_EX_NOACTIVATE
                             | NativeMethods.WS_EX_TOPMOST;
                 return cp;
             }
@@ -51,6 +50,22 @@ namespace MonitorFader
         {
             base.OnHandleCreated(e);
             WindowHelper.RegisterInternalHandle(Handle);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == NativeMethods.WM_MOUSEACTIVATE)
+            {
+                int hitMsg = (int)((m.LParam.ToInt64() >> 16) & 0xFFFF);
+                if (hitMsg == NativeMethods.WM_LBUTTONDOWN)
+                {
+                    m.Result = (IntPtr)NativeMethods.MA_ACTIVATE;
+                    return;
+                }
+                m.Result = (IntPtr)NativeMethods.MA_NOACTIVATE;
+                return;
+            }
+            base.WndProc(ref m);
         }
 
         protected override void Dispose(bool disposing)
@@ -76,6 +91,7 @@ namespace MonitorFader
 
             if (!Visible)
             {
+                Show();
                 NativeMethods.SetWindowPos(
                     Handle,
                     NativeMethods.HWND_TOPMOST,
@@ -89,7 +105,7 @@ namespace MonitorFader
                     Handle,
                     NativeMethods.HWND_TOPMOST,
                     rect.X, rect.Y, rect.Width, rect.Height,
-                    NativeMethods.SWP_NOACTIVATE);
+                    NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
             }
 
             if (needRedraw)
@@ -101,13 +117,18 @@ namespace MonitorFader
             TargetHwnd = IntPtr.Zero;
             _hovered = false;
             _pressed = false;
-            if (IsHandleCreated && Visible)
+            if (IsHandleCreated && !IsDisposed)
             {
-                NativeMethods.SetWindowPos(
-                    Handle,
-                    NativeMethods.HWND_TOPMOST,
-                    0, 0, 0, 0,
-                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_HIDEWINDOW);
+                if (NativeMethods.IsWindowVisible(Handle))
+                {
+                    NativeMethods.SetWindowPos(
+                        Handle,
+                        NativeMethods.HWND_TOPMOST,
+                        0, 0, 0, 0,
+                        NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_HIDEWINDOW);
+                }
+                if (Visible)
+                    Hide();
             }
         }
 
@@ -145,10 +166,13 @@ namespace MonitorFader
 
             if (wasPressed && ClientRectangle.Contains(e.Location))
             {
+                IntPtr target = TargetHwnd;
                 bool reverse = (e.Button == MouseButtons.Middle || e.Button == MouseButtons.Right)
                             || (ModifierKeys & Keys.Shift) == Keys.Shift;
+                Capture = false;
+                NativeMethods.ReleaseCapture();
                 var h = Clicked;
-                if (h != null) h(TargetHwnd, reverse);
+                if (h != null && target != IntPtr.Zero) h(target, reverse);
             }
         }
 
@@ -395,11 +419,8 @@ namespace MonitorFader
 
                     if (desired.Count < MaxTrackedButtons && IsTitleBarEligible(hWnd))
                     {
-                        IntPtr mon = NativeMethods.MonitorFromWindow(hWnd, NativeMethods.MONITOR_DEFAULTTONULL);
-                        bool monFaded = (hWnd != fg) && (_isMonitorFaded != null && mon != IntPtr.Zero && _isMonitorFaded(mon));
-
                         Rectangle btnRect;
-                        if (!monFaded && TryComputeButtonRect(hWnd, extRect, out btnRect))
+                        if (TryComputeButtonRect(hWnd, extRect, out btnRect))
                         {
                             bool occluded = false;
                             foreach (var occ in occluders)
