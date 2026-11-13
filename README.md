@@ -1,6 +1,11 @@
-# monitor-Fader-App
+# Monitor Fader
 
 A lightweight standalone Windows multi-monitor utility (inspired by DisplayFusion's Monitor Fading, TitleBar Buttons, and Multi-Monitor Taskbar features), built from scratch in C# using native Windows APIs with zero external dependencies.
+
+## Download
+
+- **[Download Latest Release (`MonitorFader.exe` / `MonitorFader-v1.0.0.zip`)](https://github.com/AbdulrahmanFa2hy/monitor-Fader-App/releases/latest)**
+- Single portable `.exe` (~128 KB) — no installation or extra runtime required on Windows 10/11.
 
 ## Features
 
