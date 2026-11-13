@@ -124,6 +124,9 @@ namespace MonitorFader
                 if (!NativeMethods.IsWindowVisible(hWnd) || NativeMethods.IsIconic(hWnd))
                     return true;
 
+                if (WindowHelper.IsInternalHandle(hWnd))
+                    return true;
+
                 uint pid;
                 NativeMethods.GetWindowThreadProcessId(hWnd, out pid);
                 if (pid == CurrentProcessId)

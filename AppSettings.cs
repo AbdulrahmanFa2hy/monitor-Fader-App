@@ -17,6 +17,33 @@ namespace MonitorFader
         FadeAllMonitors = 2
     }
 
+    public enum TaskbarDisplayMode
+    {
+        RelevantWindows = 0,
+        AllWindows = 1
+    }
+
+    public enum TaskbarMiddleClickMode
+    {
+        OpenNewInstance = 0,
+        CloseWindow = 1,
+        DoNothing = 2
+    }
+
+    public enum TaskbarPreviewMode
+    {
+        WindowsModern = 0,
+        TextTooltipOnly = 1,
+        Off = 2
+    }
+
+    public enum AppThemeMode
+    {
+        System = 0,
+        Dark = 1,
+        Light = 2
+    }
+
     [DataContract]
     public class AppSettings
     {
@@ -34,8 +61,33 @@ namespace MonitorFader
         [DataMember] public int OpacityPercent { get; set; }
         [DataMember] public List<string> ExcludedMonitors { get; set; }
         [DataMember] public bool StartMinimized { get; set; }
+        [DataMember] public bool AutoStartInitialized { get; set; }
+        [DataMember] public int ThemeMode { get; set; }
+
+        // TitleBar Buttons
+        [DataMember] public bool EnableTitleBarButton { get; set; }
+
+        // Multi-Monitor Taskbars
+        [DataMember] public bool EnableMultiMonitorTaskbars { get; set; }
+        [DataMember] public int TaskbarMode { get; set; }
+        [DataMember] public int TaskbarMiddleClickBehavior { get; set; }
+        [DataMember] public int TaskbarPreviewStyle { get; set; }
+        [DataMember] public bool TaskbarShowOverFullscreenOnFocusLoss { get; set; }
+        [DataMember] public bool TaskbarFocusOnDragHover { get; set; }
+        [DataMember] public int TaskbarOpacityPercent { get; set; }
 
         public AppSettings()
+        {
+            ApplyDefaults();
+        }
+
+        [OnDeserializing]
+        private void OnDeserializing(StreamingContext context)
+        {
+            ApplyDefaults();
+        }
+
+        private void ApplyDefaults()
         {
             Enabled = false;
             ExcludeFullscreen = true;
@@ -51,6 +103,18 @@ namespace MonitorFader
             OpacityPercent = 76;
             ExcludedMonitors = new List<string>();
             StartMinimized = false;
+            AutoStartInitialized = false;
+            ThemeMode = (int)AppThemeMode.System;
+
+            EnableTitleBarButton = true;
+
+            EnableMultiMonitorTaskbars = true;
+            TaskbarMode = (int)TaskbarDisplayMode.RelevantWindows;
+            TaskbarMiddleClickBehavior = (int)TaskbarMiddleClickMode.OpenNewInstance;
+            TaskbarPreviewStyle = (int)TaskbarPreviewMode.WindowsModern;
+            TaskbarShowOverFullscreenOnFocusLoss = true;
+            TaskbarFocusOnDragHover = true;
+            TaskbarOpacityPercent = 100;
         }
 
         public FadeMode FadeModeEnum
@@ -164,6 +228,8 @@ namespace MonitorFader
                             loaded.ExcludedMonitors = new List<string>();
                         if (loaded.OpacityPercent < 1) loaded.OpacityPercent = 1;
                         if (loaded.OpacityPercent > 100) loaded.OpacityPercent = 100;
+                        if (loaded.TaskbarOpacityPercent < 1) loaded.TaskbarOpacityPercent = 1;
+                        if (loaded.TaskbarOpacityPercent > 100) loaded.TaskbarOpacityPercent = 100;
                         if (loaded.FadeTimeMs < 0) loaded.FadeTimeMs = 0;
                         if (loaded.FadeTimeMs > 10000) loaded.FadeTimeMs = 10000;
                         return loaded;

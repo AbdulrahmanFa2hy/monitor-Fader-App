@@ -10,8 +10,34 @@ namespace MonitorFader
     {
         private int _value = 76;
         private bool _dragging;
+        private string _labelPrefix = "Opacity";
+        private bool _darkMode;
 
         public event EventHandler ValueChanged;
+
+        public bool DarkMode
+        {
+            get { return _darkMode; }
+            set
+            {
+                if (_darkMode != value)
+                {
+                    _darkMode = value;
+                    BackColor = _darkMode ? Color.FromArgb(35, 38, 46) : Color.FromArgb(242, 242, 242);
+                    Invalidate();
+                }
+            }
+        }
+
+        public string LabelPrefix
+        {
+            get { return _labelPrefix; }
+            set
+            {
+                _labelPrefix = string.IsNullOrEmpty(value) ? "Opacity" : value;
+                Invalidate();
+            }
+        }
 
         public int Value
         {
@@ -137,29 +163,37 @@ namespace MonitorFader
             _dpiScale = Math.Max(1f, g.DpiX / 96f);
             float s = _dpiScale;
 
-            using (var borderPen = new Pen(Color.FromArgb(215, 215, 215)))
+            Color borderColor = _darkMode ? Color.FromArgb(56, 61, 71) : Color.FromArgb(215, 215, 215);
+            Color trackColor = _darkMode ? Color.FromArgb(72, 78, 92) : Color.FromArgb(190, 190, 190);
+            Color fillColor = _darkMode ? Color.FromArgb(96, 181, 255) : Color.FromArgb(60, 120, 216);
+            Color minorTickColor = _darkMode ? Color.FromArgb(68, 74, 86) : Color.FromArgb(198, 198, 198);
+            Color majorTickColor = _darkMode ? Color.FromArgb(108, 116, 134) : Color.FromArgb(150, 150, 150);
+            Color tickTextColor = _darkMode ? Color.FromArgb(152, 162, 179) : Color.FromArgb(115, 115, 115);
+            Color thumbOuter = _darkMode ? Color.FromArgb(45, 50, 60) : Color.White;
+            Color thumbBorder = _darkMode ? Color.FromArgb(140, 152, 170) : Color.FromArgb(95, 95, 95);
+            Color thumbCore = _darkMode ? Color.FromArgb(96, 181, 255) : Color.FromArgb(75, 75, 75);
+            Color valueTextColor = _darkMode ? Color.FromArgb(236, 239, 244) : Color.FromArgb(45, 45, 45);
+
+            using (var borderPen = new Pen(borderColor))
             {
                 g.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
             }
 
-            // Track background line
-            using (var trackPen = new Pen(Color.FromArgb(190, 190, 190), 2f * s))
+            using (var trackPen = new Pen(trackColor, 2f * s))
             {
                 g.DrawLine(trackPen, TrackLeft, TrackY, TrackRight, TrackY);
             }
 
-            // Active fill up to thumb
             int thumbX = ValueToX(_value);
-            using (var fillPen = new Pen(Color.FromArgb(60, 120, 216), 2.5f * s))
+            using (var fillPen = new Pen(fillColor, 2.5f * s))
             {
                 g.DrawLine(fillPen, TrackLeft, TrackY, thumbX, TrackY);
             }
 
-            // Ticks and labels
-            using (var minorPen = new Pen(Color.FromArgb(198, 198, 198), 1f))
-            using (var majorPen = new Pen(Color.FromArgb(150, 150, 150), 1f))
+            using (var minorPen = new Pen(minorTickColor, 1f))
+            using (var majorPen = new Pen(majorTickColor, 1f))
             using (var labelFont = new Font("Segoe UI", 7.5f))
-            using (var labelBrush = new SolidBrush(Color.FromArgb(115, 115, 115)))
+            using (var labelBrush = new SolidBrush(tickTextColor))
             {
                 for (int v = 1; v <= 100; v++)
                 {
@@ -181,24 +215,22 @@ namespace MonitorFader
                 }
             }
 
-            // Thumb circle
             int r = (int)Math.Round(7 * s);
             int ir = (int)Math.Round(3 * s);
             var thumbRect = new Rectangle(thumbX - r, TrackY - r, r * 2, r * 2);
-            using (var outerBrush = new SolidBrush(Color.White))
-            using (var outerPen = new Pen(Color.FromArgb(95, 95, 95), 1.5f * s))
-            using (var innerBrush = new SolidBrush(Color.FromArgb(75, 75, 75)))
+            using (var outerBrush = new SolidBrush(thumbOuter))
+            using (var outerPen = new Pen(thumbBorder, 1.5f * s))
+            using (var innerBrush = new SolidBrush(thumbCore))
             {
                 g.FillEllipse(outerBrush, thumbRect);
                 g.DrawEllipse(outerPen, thumbRect);
                 g.FillEllipse(innerBrush, thumbX - ir, TrackY - ir, ir * 2, ir * 2);
             }
 
-            // Bottom-left opacity text
             using (var boldFont = new Font("Segoe UI", 8.5f, FontStyle.Bold))
-            using (var textBrush = new SolidBrush(Color.FromArgb(45, 45, 45)))
+            using (var textBrush = new SolidBrush(valueTextColor))
             {
-                g.DrawString("Opacity: " + _value + "%", boldFont, textBrush, 8f * s, Height - 20f * s);
+                g.DrawString(_labelPrefix + ": " + _value + "%", boldFont, textBrush, 8f * s, Height - 20f * s);
             }
         }
     }
@@ -386,9 +418,113 @@ namespace MonitorFader
         }
     }
 
+    public sealed class ThemedComboBox : ComboBox
+    {
+        private bool _darkMode;
+
+        public bool DarkMode
+        {
+            get { return _darkMode; }
+            set
+            {
+                _darkMode = value;
+                BackColor = _darkMode ? Color.FromArgb(37, 40, 48) : Color.White;
+                ForeColor = _darkMode ? Color.FromArgb(236, 239, 244) : Color.FromArgb(30, 34, 40);
+                Invalidate();
+            }
+        }
+
+        public ThemedComboBox()
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList;
+            DrawMode = DrawMode.OwnerDrawFixed;
+            FlatStyle = FlatStyle.Flat;
+        }
+
+        protected override void OnDrawItem(DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= Items.Count)
+                return;
+
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            Color bg = _darkMode
+                ? (selected ? Color.FromArgb(48, 66, 92) : Color.FromArgb(37, 40, 48))
+                : (selected ? Color.FromArgb(229, 241, 251) : Color.White);
+            Color fg = Enabled
+                ? (_darkMode ? Color.FromArgb(236, 239, 244) : Color.FromArgb(30, 34, 40))
+                : (_darkMode ? Color.FromArgb(110, 116, 128) : Color.FromArgb(150, 150, 150));
+
+            using (var b = new SolidBrush(bg))
+            {
+                e.Graphics.FillRectangle(b, e.Bounds);
+            }
+
+            string text = GetItemText(Items[e.Index]);
+            TextRenderer.DrawText(
+                e.Graphics,
+                text,
+                Font,
+                new Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height),
+                fg,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == 0x000F /* WM_PAINT */)
+            {
+                using (var g = Graphics.FromHwnd(Handle))
+                {
+                    Color borderCol = _darkMode ? Color.FromArgb(62, 68, 80) : Color.FromArgb(190, 195, 204);
+                    Color arrowCol = Enabled
+                        ? (_darkMode ? Color.FromArgb(200, 206, 216) : Color.FromArgb(80, 85, 95))
+                        : (_darkMode ? Color.FromArgb(95, 100, 110) : Color.FromArgb(160, 160, 160));
+                    Color boxFill = _darkMode ? Color.FromArgb(37, 40, 48) : Color.White;
+
+                    int dropW = SystemInformation.VerticalScrollBarWidth + 2;
+                    var dropRect = new Rectangle(Width - dropW - 1, 1, dropW, Height - 2);
+                    using (var fill = new SolidBrush(boxFill))
+                    using (var border = new Pen(borderCol))
+                    using (var arrowPen = new Pen(arrowCol, 1.5f))
+                    {
+                        g.FillRectangle(fill, dropRect);
+                        g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+
+                        int cx = dropRect.X + dropRect.Width / 2;
+                        int cy = Height / 2;
+                        g.SmoothingMode = SmoothingMode.AntiAlias;
+                        g.DrawLine(arrowPen, cx - 4, cy - 2, cx, cy + 2);
+                        g.DrawLine(arrowPen, cx, cy + 2, cx + 4, cy - 2);
+                    }
+                }
+            }
+        }
+    }
+
+    public sealed class DarkMenuColorTable : ProfessionalColorTable
+    {
+        public override Color MenuStripGradientBegin { get { return Color.FromArgb(34, 37, 44); } }
+        public override Color MenuStripGradientEnd { get { return Color.FromArgb(34, 37, 44); } }
+        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(34, 37, 44); } }
+        public override Color MenuBorder { get { return Color.FromArgb(60, 65, 76); } }
+        public override Color MenuItemBorder { get { return Color.FromArgb(65, 92, 130); } }
+        public override Color MenuItemSelected { get { return Color.FromArgb(48, 58, 74); } }
+        public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(48, 58, 74); } }
+        public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(48, 58, 74); } }
+        public override Color ImageMarginGradientBegin { get { return Color.FromArgb(34, 37, 44); } }
+        public override Color ImageMarginGradientMiddle { get { return Color.FromArgb(34, 37, 44); } }
+        public override Color ImageMarginGradientEnd { get { return Color.FromArgb(34, 37, 44); } }
+        public override Color SeparatorDark { get { return Color.FromArgb(58, 63, 74); } }
+        public override Color SeparatorLight { get { return Color.FromArgb(58, 63, 74); } }
+        public override Color CheckBackground { get { return Color.FromArgb(48, 80, 120); } }
+        public override Color CheckSelectedBackground { get { return Color.FromArgb(58, 96, 145); } }
+    }
+
     public sealed class HotkeyCaptureDialog : Form
     {
         private readonly HotkeyHook _hook;
+        private readonly bool _darkMode;
         public Keys CapturedKey { get; private set; }
         public bool CapturedExtended { get; private set; }
         public bool CapturedCtrl { get; private set; }
@@ -396,9 +532,10 @@ namespace MonitorFader
         public bool CapturedShift { get; private set; }
         public bool CapturedWin { get; private set; }
 
-        public HotkeyCaptureDialog(HotkeyHook hook)
+        public HotkeyCaptureDialog(HotkeyHook hook, bool darkMode)
         {
             _hook = hook;
+            _darkMode = darkMode;
             SuspendLayout();
             Text = "Set HotKey";
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -406,6 +543,8 @@ namespace MonitorFader
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
             ClientSize = new Size(310, 115);
+            BackColor = darkMode ? Color.FromArgb(26, 28, 34) : Color.FromArgb(248, 248, 248);
+            ForeColor = darkMode ? Color.FromArgb(236, 239, 244) : Color.FromArgb(30, 34, 40);
 
             var lbl = new Label
             {
@@ -414,6 +553,7 @@ namespace MonitorFader
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Top,
                 Height = 70,
+                ForeColor = ForeColor,
                 Font = new Font("Segoe UI", 9.5f)
             };
 
@@ -423,8 +563,12 @@ namespace MonitorFader
                 DialogResult = DialogResult.Cancel,
                 Width = 85,
                 Height = 28,
-                Location = new Point(112, 76)
+                Location = new Point(112, 76),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = darkMode ? Color.FromArgb(44, 48, 58) : Color.FromArgb(240, 240, 240),
+                ForeColor = ForeColor
             };
+            btnCancel.FlatAppearance.BorderColor = darkMode ? Color.FromArgb(68, 74, 88) : Color.FromArgb(190, 195, 204);
 
             Controls.Add(lbl);
             Controls.Add(btnCancel);
@@ -433,6 +577,12 @@ namespace MonitorFader
             AutoScaleMode = AutoScaleMode.Dpi;
             ResumeLayout(false);
             PerformLayout();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            WindowHelper.SetWindowDarkMode(Handle, _darkMode);
         }
 
         protected override void OnShown(EventArgs e)

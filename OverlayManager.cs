@@ -32,6 +32,19 @@ namespace MonitorFader
             get { return true; }
         }
 
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            WindowHelper.RegisterInternalHandle(Handle);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (IsHandleCreated)
+                WindowHelper.UnregisterInternalHandle(Handle);
+            base.Dispose(disposing);
+        }
+
         protected override CreateParams CreateParams
         {
             get
@@ -118,6 +131,16 @@ namespace MonitorFader
         public List<MonitorInfoItem> GetCurrentMonitors()
         {
             return new List<MonitorInfoItem>(_monitors);
+        }
+
+        public bool IsMonitorCurrentlyFaded(IntPtr hMonitor)
+        {
+            foreach (var overlay in _overlays.Values)
+            {
+                if (!overlay.IsDisposed && overlay.MonitorHandle == hMonitor && overlay.IsShown && overlay.TargetOpacity > 0.01)
+                    return true;
+            }
+            return false;
         }
 
         public void RefreshMonitors()

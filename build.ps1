@@ -12,8 +12,11 @@ $sources = @(
     (Join-Path $dir "AppSettings.cs"),
     (Join-Path $dir "NativeMethods.cs"),
     (Join-Path $dir "MonitorManager.cs"),
+    (Join-Path $dir "WindowHelper.cs"),
     (Join-Path $dir "HotkeyHook.cs"),
     (Join-Path $dir "OverlayManager.cs"),
+    (Join-Path $dir "TitleBarButtonManager.cs"),
+    (Join-Path $dir "TaskbarManager.cs"),
     (Join-Path $dir "Controls.cs"),
     (Join-Path $dir "SettingsForm.cs")
 )

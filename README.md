@@ -1,8 +1,10 @@
 # monitor-Fader-App
 
-A lightweight standalone Windows utility that dims inactive monitors (inspired by DisplayFusion's Monitor Fading feature), built from scratch in C# using native Windows APIs with zero external dependencies.
+A lightweight standalone Windows multi-monitor utility (inspired by DisplayFusion's Monitor Fading, TitleBar Buttons, and Multi-Monitor Taskbar features), built from scratch in C# using native Windows APIs with zero external dependencies.
 
 ## Features
+
+### Monitor Fading
 - **Enable / Disable Monitor Fading** from the UI, system tray, or global hotkey
 - **Fading Modes:**
   - Fade Non-Current Monitors (Active Window)
@@ -12,8 +14,23 @@ A lightweight standalone Windows utility that dims inactive monitors (inspired b
 - **Global Hotkey Support** (defaults to `Num Enter`; supports `Ctrl`/`Alt`/`Shift`/`Win` + key combinations)
 - **Custom Fade Color, Fade Time (ms), and Opacity (1%–100%)** with smooth ~60 FPS transitions
 - **Excluded Monitors Visual Map** — click any monitor to exclude/include it from fading
-- **Per-Monitor DPI Aware** and click-through overlays (`WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE`)
-- **System Tray & Start with Windows** (`--minimized`)
+
+### TitleBar Buttons
+- Adds a **Move Window to Next Monitor** button directly next to the Minimize button on open windows (`WM_GETTITLEBARINFOEX` + DWM fallback)
+- Left-click moves to the next monitor; Middle-click / Right-click / Shift+Left-click moves to the previous monitor
+- Preserves maximized state and scales proportional window size/position across mixed-DPI monitors
+
+### Multi-Monitor Taskbars
+- Adds a native-style taskbar (`SHAppBarMessage`) to each secondary monitor with Start button, live window buttons, and clock
+- **Taskbar Mode:** Show relevant windows per monitor or all windows on all taskbars
+- **Middle-Click / Shift+Click Behavior:** Open a new instance, Close window, or Do nothing
+- **Window Preview Style:** Live DWM thumbnails (`DwmRegisterThumbnail`), text tooltips, or Off
+- **Fullscreen Handling & Drag-Hover Focus:** Show taskbar in front of fullscreen apps when they lose focus, and activate windows when dragging over taskbar buttons
+- **Taskbar Opacity** slider (`1%`–`100%`)
+
+### System Integration
+- **Start with Windows** (auto-enabled via `HKCU\...\Run` with `--minimized`)
+- **System Tray** quick toggles & Per-Monitor DPI awareness
 
 ## Build
 Run the PowerShell build script (uses the built-in .NET Framework `csc.exe`, no SDK install required):
