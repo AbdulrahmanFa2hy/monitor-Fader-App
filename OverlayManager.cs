@@ -242,6 +242,15 @@ namespace MonitorFader
 
                 overlay.TargetOpacity = shouldFade ? desiredMaxOpacity : 0.0;
 
+                if (shouldFade && overlay.IsShown && overlay.IsHandleCreated)
+                {
+                    NativeMethods.SetWindowPos(
+                        overlay.Handle,
+                        NativeMethods.HWND_TOPMOST,
+                        0, 0, 0, 0,
+                        NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+                }
+
                 if (Math.Abs(overlay.CurrentOpacity - overlay.TargetOpacity) > 0.001)
                     needsAnimation = true;
             }

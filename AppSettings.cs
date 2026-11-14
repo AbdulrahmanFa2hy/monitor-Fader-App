@@ -90,7 +90,7 @@ namespace MonitorFader
         private void ApplyDefaults()
         {
             Enabled = false;
-            ExcludeFullscreen = true;
+            ExcludeFullscreen = false;
             Mode = (int)FadeMode.FadeNonCurrentActiveWindow;
             HotkeyKeyCode = (int)Keys.Return;
             HotkeyExtended = true; // Num Enter by default, matching DisplayFusion screenshot
