@@ -24,14 +24,46 @@ namespace MonitorFaderSetup
         [DllImport("user32.dll")]
         public static extern bool SetProcessDPIAware();
 
+        [DllImport("shcore.dll")]
+        public static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr MonitorFromPoint(Point pt, uint dwFlags);
+
         [DllImport("dwmapi.dll")]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
         [DllImport("shell32.dll")]
         public static extern void SHChangeNotify(uint wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
 
+        public const uint MONITOR_DEFAULTTONEAREST = 2;
         public const uint SHCNE_ASSOCCHANGED = 0x08000000;
         public const uint SHCNF_IDLIST = 0x0000;
+
+        public static float GetTargetScale(out Screen screen)
+        {
+            screen = Screen.FromPoint(Cursor.Position);
+            try
+            {
+                Point center = new Point(screen.Bounds.Left + screen.Bounds.Width / 2, screen.Bounds.Top + screen.Bounds.Height / 2);
+                IntPtr hMon = MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST);
+                uint dx, dy;
+                if (hMon != IntPtr.Zero && GetDpiForMonitor(hMon, 0, out dx, out dy) == 0 && dx >= 96)
+                    return dx / 96f;
+            }
+            catch { }
+
+            try
+            {
+                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    if (g.DpiX >= 96f) return g.DpiX / 96f;
+                }
+            }
+            catch { }
+
+            return 1f;
+        }
     }
 
     internal static class ShortcutHelper
@@ -328,6 +360,7 @@ namespace MonitorFaderSetup
     internal sealed class SetupForm : Form
     {
         private readonly Icon _icon;
+        private readonly float _scale;
         private TextBox _txtPath;
         private Button _btnBrowse;
         private CheckBox _chkStartMenu;
@@ -341,21 +374,39 @@ namespace MonitorFaderSetup
         private bool _installed;
         private bool _dark;
 
+        private int S(int px)
+        {
+            return (int)Math.Round(px * _scale);
+        }
+
+        private Font F(float px, FontStyle style = FontStyle.Regular)
+        {
+            return new Font("Segoe UI", Math.Max(9f, px * _scale), style, GraphicsUnit.Pixel);
+        }
+
         public SetupForm()
         {
             _icon = InstallEngine.LoadEmbeddedIcon();
             _dark = IsAppsDarkMode();
 
+            Screen targetScreen;
+            _scale = Native.GetTargetScale(out targetScreen);
+
+            SuspendLayout();
+            AutoScaleMode = AutoScaleMode.None;
             Text = "Monitor Fader Setup";
             Icon = _icon;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(490, 390);
-            Font = new Font("Segoe UI", 9.25f);
-            AutoScaleDimensions = new SizeF(96F, 96F);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            StartPosition = FormStartPosition.Manual;
+            ClientSize = new Size(S(540), S(430));
+            Font = F(13f);
+
+            Rectangle wa = targetScreen.WorkingArea;
+            Location = new Point(
+                wa.Left + Math.Max(0, (wa.Width - Width) / 2),
+                wa.Top + Math.Max(0, (wa.Height - Height) / 2));
 
             Color bg = _dark ? Color.FromArgb(26, 28, 34) : Color.FromArgb(247, 249, 252);
             Color cardBg = _dark ? Color.FromArgb(35, 38, 46) : Color.White;
@@ -366,7 +417,9 @@ namespace MonitorFaderSetup
             BackColor = bg;
             ForeColor = fg;
 
-            var header = new Panel { Location = new Point(0, 0), Size = new Size(ClientSize.Width, 84), BackColor = cardBg };
+            int pad = S(24);
+            int headerH = S(92);
+            var header = new Panel { Location = new Point(0, 0), Size = new Size(ClientSize.Width, headerH), BackColor = cardBg };
             header.Paint += (s, e) =>
             {
                 using (var pen = new Pen(border))
@@ -374,50 +427,61 @@ namespace MonitorFaderSetup
             };
             Controls.Add(header);
 
+            int iconSz = S(48);
             var pic = new PictureBox
             {
-                Location = new Point(20, 18),
-                Size = new Size(48, 48),
+                Location = new Point(pad, (headerH - iconSz) / 2),
+                Size = new Size(iconSz, iconSz),
                 SizeMode = PictureBoxSizeMode.StretchImage,
-                Image = new Icon(_icon, 48, 48).ToBitmap()
+                Image = new Icon(_icon, iconSz, iconSz).ToBitmap()
             };
             header.Controls.Add(pic);
 
+            int titleX = pad + iconSz + S(16);
             var lblTitle = new Label
             {
                 Text = "Install Monitor Fader",
-                Font = new Font("Segoe UI Semibold", 13.5f),
-                Location = new Point(82, 16),
-                AutoSize = true,
-                ForeColor = fg
+                Font = F(19f, FontStyle.Bold),
+                Location = new Point(titleX, S(18)),
+                Size = new Size(ClientSize.Width - titleX - pad, S(28)),
+                ForeColor = fg,
+                UseMnemonic = false
             };
             header.Controls.Add(lblTitle);
 
             var lblSub = new Label
             {
                 Text = "Version 1.0.0  •  Multi-Monitor Fading, TitleBar & Taskbars",
-                Location = new Point(84, 46),
-                AutoSize = true,
-                ForeColor = muted
+                Font = F(12.5f),
+                Location = new Point(titleX, S(50)),
+                Size = new Size(ClientSize.Width - titleX - pad, S(22)),
+                ForeColor = muted,
+                UseMnemonic = false
             };
             header.Controls.Add(lblSub);
 
-            int y = 104;
+            int y = headerH + S(20);
             var lblDir = new Label
             {
                 Text = "Installation Folder:",
-                Location = new Point(22, y),
-                AutoSize = true,
-                ForeColor = fg
+                Font = F(13f),
+                Location = new Point(pad, y),
+                Size = new Size(ClientSize.Width - pad * 2, S(22)),
+                ForeColor = fg,
+                UseMnemonic = false
             };
             Controls.Add(lblDir);
 
-            y += 24;
+            y += S(26);
+            int browseW = S(104);
+            int gap = S(10);
+            int rowH = S(30);
             _txtPath = new TextBox
             {
                 Text = InstallEngine.DefaultInstallDir,
-                Location = new Point(22, y),
-                Size = new Size(346, 25),
+                Font = F(12.5f),
+                Location = new Point(pad, y + S(2)),
+                Size = new Size(ClientSize.Width - pad * 2 - browseW - gap, rowH - S(4)),
                 BackColor = cardBg,
                 ForeColor = fg,
                 BorderStyle = BorderStyle.FixedSingle
@@ -427,11 +491,13 @@ namespace MonitorFaderSetup
             _btnBrowse = new Button
             {
                 Text = "Browse...",
-                Location = new Point(378, y - 1),
-                Size = new Size(90, 26),
+                Font = F(12.5f),
+                Location = new Point(ClientSize.Width - pad - browseW, y),
+                Size = new Size(browseW, rowH),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = cardBg,
-                ForeColor = fg
+                ForeColor = fg,
+                UseMnemonic = false
             };
             _btnBrowse.FlatAppearance.BorderColor = border;
             _btnBrowse.Click += (s, e) =>
@@ -445,20 +511,20 @@ namespace MonitorFaderSetup
             };
             Controls.Add(_btnBrowse);
 
-            y += 42;
-            _chkStartMenu = CreateCheck("Create Start Menu shortcut", true, 22, y, fg);
-            y += 28;
-            _chkDesktop = CreateCheck("Create Desktop shortcut", true, 22, y, fg);
-            y += 28;
-            _chkAutoStart = CreateCheck("Start Monitor Fader automatically with Windows", true, 22, y, fg);
-            y += 28;
-            _chkLaunch = CreateCheck("Launch Monitor Fader after installation", true, 22, y, fg);
+            y += rowH + S(18);
+            _chkStartMenu = CreateCheck("Create Start Menu shortcut", true, pad, y, fg);
+            y += S(30);
+            _chkDesktop = CreateCheck("Create Desktop shortcut", true, pad, y, fg);
+            y += S(30);
+            _chkAutoStart = CreateCheck("Start Monitor Fader automatically with Windows", true, pad, y, fg);
+            y += S(30);
+            _chkLaunch = CreateCheck("Launch Monitor Fader after installation", true, pad, y, fg);
 
-            y += 40;
+            y += S(40);
             _progress = new ProgressBar
             {
-                Location = new Point(22, y),
-                Size = new Size(446, 14),
+                Location = new Point(pad, y),
+                Size = new Size(ClientSize.Width - pad * 2, S(16)),
                 Minimum = 0,
                 Maximum = 100,
                 Value = 0
@@ -468,21 +534,29 @@ namespace MonitorFaderSetup
             _lblStatus = new Label
             {
                 Text = "Ready to install.",
-                Location = new Point(22, y + 20),
-                Size = new Size(446, 20),
-                ForeColor = muted
+                Font = F(12.5f),
+                Location = new Point(pad, y + S(24)),
+                Size = new Size(ClientSize.Width - pad * 2, S(24)),
+                ForeColor = muted,
+                UseMnemonic = false
             };
             Controls.Add(_lblStatus);
+
+            int btnW = S(104);
+            int cancelW = S(98);
+            int btnH = S(34);
+            int btnY = ClientSize.Height - btnH - S(18);
 
             _btnInstall = new Button
             {
                 Text = "Install",
-                Location = new Point(278, ClientSize.Height - 46),
-                Size = new Size(92, 30),
+                Location = new Point(ClientSize.Width - pad - cancelW - S(10) - btnW, btnY),
+                Size = new Size(btnW, btnH),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.FromArgb(0, 120, 212),
                 ForeColor = Color.White,
-                Font = new Font("Segoe UI Semibold", 9.25f)
+                Font = F(13f, FontStyle.Bold),
+                UseMnemonic = false
             };
             _btnInstall.FlatAppearance.BorderSize = 0;
             _btnInstall.Click += OnInstallClick;
@@ -491,11 +565,13 @@ namespace MonitorFaderSetup
             _btnCancel = new Button
             {
                 Text = "Cancel",
-                Location = new Point(378, ClientSize.Height - 46),
-                Size = new Size(90, 30),
+                Location = new Point(ClientSize.Width - pad - cancelW, btnY),
+                Size = new Size(cancelW, btnH),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = cardBg,
-                ForeColor = fg
+                ForeColor = fg,
+                Font = F(13f),
+                UseMnemonic = false
             };
             _btnCancel.FlatAppearance.BorderColor = border;
             _btnCancel.Click += (s, e) => Close();
@@ -503,6 +579,9 @@ namespace MonitorFaderSetup
 
             AcceptButton = _btnInstall;
             CancelButton = _btnCancel;
+
+            ResumeLayout(false);
+            PerformLayout();
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -523,8 +602,10 @@ namespace MonitorFaderSetup
                 Text = text,
                 Checked = isChecked,
                 Location = new Point(x, y),
-                AutoSize = true,
-                ForeColor = fg
+                Size = new Size(ClientSize.Width - x - S(24), S(24)),
+                Font = F(13f),
+                ForeColor = fg,
+                UseMnemonic = false
             };
             Controls.Add(chk);
             return chk;
