@@ -1,6 +1,8 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
+using System.Reflection;
 using System.Windows.Forms;
 
 namespace MonitorFader
@@ -1081,6 +1083,28 @@ namespace MonitorFader
 
         private static Icon CreateAppIcon()
         {
+            try
+            {
+                using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("MonitorFader.ico"))
+                {
+                    if (s != null)
+                        return new Icon(s);
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                Icon assoc = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (assoc != null)
+                    return assoc;
+            }
+            catch
+            {
+            }
+
             using (var bmp = new Bitmap(32, 32))
             using (var g = Graphics.FromImage(bmp))
             {

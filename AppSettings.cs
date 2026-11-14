@@ -45,6 +45,16 @@ namespace MonitorFader
     }
 
     [DataContract]
+    public class PinnedTaskbarItem
+    {
+        [DataMember] public string GroupKey { get; set; }
+        [DataMember] public string ExePath { get; set; }
+        [DataMember] public string Aumid { get; set; }
+        [DataMember] public string DisplayName { get; set; }
+        [DataMember] public string IconBase64 { get; set; }
+    }
+
+    [DataContract]
     public class AppSettings
     {
         [DataMember] public bool Enabled { get; set; }
@@ -75,6 +85,7 @@ namespace MonitorFader
         [DataMember] public bool TaskbarShowOverFullscreenOnFocusLoss { get; set; }
         [DataMember] public bool TaskbarFocusOnDragHover { get; set; }
         [DataMember] public int TaskbarOpacityPercent { get; set; }
+        [DataMember] public List<PinnedTaskbarItem> PinnedTaskbarItems { get; set; }
 
         public AppSettings()
         {
@@ -115,6 +126,7 @@ namespace MonitorFader
             TaskbarShowOverFullscreenOnFocusLoss = true;
             TaskbarFocusOnDragHover = true;
             TaskbarOpacityPercent = 100;
+            PinnedTaskbarItems = new List<PinnedTaskbarItem>();
         }
 
         public FadeMode FadeModeEnum
@@ -226,6 +238,8 @@ namespace MonitorFader
                     {
                         if (loaded.ExcludedMonitors == null)
                             loaded.ExcludedMonitors = new List<string>();
+                        if (loaded.PinnedTaskbarItems == null)
+                            loaded.PinnedTaskbarItems = new List<PinnedTaskbarItem>();
                         if (loaded.OpacityPercent < 1) loaded.OpacityPercent = 1;
                         if (loaded.OpacityPercent > 100) loaded.OpacityPercent = 100;
                         if (loaded.TaskbarOpacityPercent < 1) loaded.TaskbarOpacityPercent = 1;

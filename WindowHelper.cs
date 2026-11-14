@@ -1243,23 +1243,314 @@ namespace MonitorFader
             BringWindowToFront(hWnd);
         }
 
-        public static void OpenNewInstance(IntPtr hWnd)
+        public static string ResolveAppUserModelId(IntPtr hWnd, string realExePath)
         {
-            string exe = GetProcessExecutablePath(hWnd);
-            if (string.IsNullOrEmpty(exe)) return;
+            if (hWnd != IntPtr.Zero && NativeMethods.IsWindow(hWnd))
+            {
+                string winAumid = GetAppUserModelId(hWnd);
+                if (!string.IsNullOrWhiteSpace(winAumid))
+                    return winAumid.Trim();
+            }
 
-            string fileName = Path.GetFileName(exe);
-            if (string.Equals(fileName, "ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
-                return;
+            if (string.IsNullOrWhiteSpace(realExePath))
+                return null;
 
             try
             {
-                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+                string dir = Path.GetDirectoryName(realExePath);
+                if (string.IsNullOrEmpty(dir)) return null;
+
+                string manifest = Path.Combine(dir, "AppxManifest.xml");
+                if (!File.Exists(manifest))
+                {
+                    string parent = Path.GetDirectoryName(dir);
+                    if (!string.IsNullOrEmpty(parent) && File.Exists(Path.Combine(parent, "AppxManifest.xml")))
+                    {
+                        dir = parent;
+                        manifest = Path.Combine(parent, "AppxManifest.xml");
+                    }
+                    else
+                    {
+                        return null;
+                    }
+                }
+
+                string pkgFolderName = Path.GetFileName(dir);
+                if (string.IsNullOrEmpty(pkgFolderName)) return null;
+
+                string[] parts = pkgFolderName.Split('_');
+                if (parts.Length < 5) return null;
+
+                string pkgFamilyName = parts[0] + "_" + parts[parts.Length - 1];
+                string xml = File.ReadAllText(manifest);
+                Match m = Regex.Match(xml, @"<Application\s+[^>]*\bId\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
+                if (m.Success)
+                {
+                    return pkgFamilyName + "!" + m.Groups[1].Value;
+                }
             }
             catch
             {
-                // Ignore launch failures
             }
+            return null;
+        }
+
+        public static string GetFriendlyAppName(IntPtr hWnd, string realExePath, string windowTitle)
+        {
+            if (!string.IsNullOrWhiteSpace(realExePath))
+            {
+                string fileName = Path.GetFileName(realExePath);
+                if (string.Equals(fileName, "explorer.exe", StringComparison.OrdinalIgnoreCase))
+                    return "File Explorer";
+
+                try
+                {
+                    if (File.Exists(realExePath))
+                    {
+                        var vi = FileVersionInfo.GetVersionInfo(realExePath);
+                        if (!string.IsNullOrWhiteSpace(vi.FileDescription)
+                            && !vi.FileDescription.Equals("Application Frame Host", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return vi.FileDescription.Trim();
+                        }
+                        if (!string.IsNullOrWhiteSpace(vi.ProductName)
+                            && !vi.ProductName.Equals("Microsoft® Windows® Operating System", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return vi.ProductName.Trim();
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(windowTitle))
+                return windowTitle.Trim();
+
+            if (!string.IsNullOrWhiteSpace(realExePath))
+                return Path.GetFileNameWithoutExtension(realExePath);
+
+            return "Application";
+        }
+
+        public static string BitmapToPngBase64(Bitmap bmp)
+        {
+            if (bmp == null) return null;
+            try
+            {
+                using (var ms = new MemoryStream())
+                {
+                    bmp.Save(ms, ImageFormat.Png);
+                    return Convert.ToBase64String(ms.ToArray());
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static Bitmap PngBase64ToBitmap(string base64, int size)
+        {
+            if (string.IsNullOrWhiteSpace(base64)) return null;
+            try
+            {
+                byte[] bytes = Convert.FromBase64String(base64);
+                using (var ms = new MemoryStream(bytes))
+                using (var src = new Bitmap(ms))
+                {
+                    var dst = new Bitmap(size, size, PixelFormat.Format32bppPArgb);
+                    using (var g = Graphics.FromImage(dst))
+                    {
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.SmoothingMode = SmoothingMode.HighQuality;
+                        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        g.DrawImage(src, 0, 0, size, size);
+                    }
+                    return dst;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static void LaunchPinnedApp(PinnedTaskbarItem item, IntPtr targetMonitor = default(IntPtr))
+        {
+            if (item == null) return;
+
+            var existingHandles = new HashSet<IntPtr>();
+            foreach (var w in GetTaskbarWindows())
+            {
+                existingHandles.Add(w.Handle);
+            }
+
+            bool launched = false;
+            string exe = item.ExePath;
+
+            if (!string.IsNullOrWhiteSpace(exe)
+                && string.Equals(Path.GetFileName(exe), "explorer.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true });
+                    launched = true;
+                }
+                catch { }
+            }
+
+            if (!launched && !string.IsNullOrWhiteSpace(item.Aumid))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", "shell:AppsFolder\\" + item.Aumid) { UseShellExecute = true });
+                    launched = true;
+                }
+                catch { }
+            }
+
+            if (!launched && !string.IsNullOrWhiteSpace(exe))
+            {
+                string resolvedAumid = ResolveAppUserModelId(IntPtr.Zero, exe);
+                if (!string.IsNullOrWhiteSpace(resolvedAumid))
+                {
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo("explorer.exe", "shell:AppsFolder\\" + resolvedAumid) { UseShellExecute = true });
+                        launched = true;
+                    }
+                    catch { }
+                }
+            }
+
+            if (!launched && !string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo(exe)
+                    {
+                        UseShellExecute = true,
+                        WorkingDirectory = Path.GetDirectoryName(exe) ?? string.Empty
+                    };
+                    Process.Start(psi);
+                    launched = true;
+                }
+                catch { }
+            }
+
+            if (launched && targetMonitor != IntPtr.Zero)
+            {
+                int ticks = 0;
+                var moveTimer = new Timer { Interval = 120 };
+                moveTimer.Tick += (s, e) =>
+                {
+                    ticks++;
+                    var currentWins = GetTaskbarWindows();
+                    foreach (var w in currentWins)
+                    {
+                        if (!existingHandles.Contains(w.Handle)
+                            && (string.Equals(w.GroupKey, item.GroupKey, StringComparison.OrdinalIgnoreCase)
+                                || (!string.IsNullOrEmpty(exe) && string.Equals(w.RealExePath, exe, StringComparison.OrdinalIgnoreCase))))
+                        {
+                            moveTimer.Stop();
+                            moveTimer.Dispose();
+                            MoveWindowToSpecificMonitor(w.Handle, targetMonitor);
+                            return;
+                        }
+                    }
+
+                    if (ticks >= 25)
+                    {
+                        moveTimer.Stop();
+                        moveTimer.Dispose();
+                    }
+                };
+                moveTimer.Start();
+            }
+        }
+
+        public static void MoveWindowToSpecificMonitor(IntPtr hWnd, IntPtr targetMonitor)
+        {
+            if (hWnd == IntPtr.Zero || targetMonitor == IntPtr.Zero || !NativeMethods.IsWindow(hWnd))
+                return;
+
+            IntPtr curMon = GetWindowMonitor(hWnd);
+            if (curMon == targetMonitor)
+            {
+                BringWindowToFront(hWnd);
+                return;
+            }
+
+            var monitors = MonitorManager.GetMonitors();
+            MonitorInfoItem src = monitors.Find(m => m.HMonitor == curMon);
+            MonitorInfoItem dst = monitors.Find(m => m.HMonitor == targetMonitor);
+            if (dst == null)
+            {
+                BringWindowToFront(hWnd);
+                return;
+            }
+            if (src == null) src = dst;
+
+            bool wasMinimized = NativeMethods.IsIconic(hWnd);
+            bool wasMaximized = NativeMethods.IsZoomed(hWnd);
+
+            if (wasMinimized || wasMaximized)
+                NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
+
+            NativeMethods.RECT rect;
+            if (!NativeMethods.GetWindowRect(hWnd, out rect))
+                return;
+
+            Rectangle srcWork = src.WorkArea;
+            Rectangle dstWork = dst.WorkArea;
+
+            double relX = srcWork.Width > 0 ? (double)(rect.Left - srcWork.Left) / srcWork.Width : 0.1;
+            double relY = srcWork.Height > 0 ? (double)(rect.Top - srcWork.Top) / srcWork.Height : 0.1;
+            double relW = srcWork.Width > 0 ? (double)rect.Width / srcWork.Width : 0.6;
+            double relH = srcWork.Height > 0 ? (double)rect.Height / srcWork.Height : 0.6;
+
+            int newW = Math.Max(220, Math.Min(dstWork.Width, (int)Math.Round(relW * dstWork.Width)));
+            int newH = Math.Max(140, Math.Min(dstWork.Height, (int)Math.Round(relH * dstWork.Height)));
+            int newX = Math.Max(dstWork.Left, Math.Min(dstWork.Right - newW, dstWork.Left + (int)Math.Round(relX * dstWork.Width)));
+            int newY = Math.Max(dstWork.Top, Math.Min(dstWork.Bottom - newH, dstWork.Top + (int)Math.Round(relY * dstWork.Height)));
+
+            if (wasMaximized)
+            {
+                int preW = Math.Min(rect.Width, Math.Max(300, dstWork.Width - 40));
+                int preH = Math.Min(rect.Height, Math.Max(200, dstWork.Height - 40));
+                int preX = dstWork.Left + (dstWork.Width - preW) / 2;
+                int preY = dstWork.Top + (dstWork.Height - preH) / 2;
+                NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, preX, preY, preW, preH,
+                    NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+                NativeMethods.ShowWindow(hWnd, NativeMethods.SW_MAXIMIZE);
+            }
+            else
+            {
+                NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, newX, newY, newW, newH,
+                    NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+                NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, newX, newY, newW, newH,
+                    NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+            }
+
+            BringWindowToFront(hWnd);
+        }
+
+        public static void OpenNewInstance(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero || !NativeMethods.IsWindow(hWnd))
+                return;
+
+            string exe = ResolveRealExecutablePath(hWnd);
+            string aumid = ResolveAppUserModelId(hWnd, exe);
+            string groupKey = GetWindowGroupKey(hWnd, exe);
+            LaunchPinnedApp(new PinnedTaskbarItem
+            {
+                GroupKey = groupKey,
+                ExePath = exe,
+                Aumid = aumid
+            }, GetWindowMonitor(hWnd));
         }
 
         public static void CloseWindow(IntPtr hWnd)

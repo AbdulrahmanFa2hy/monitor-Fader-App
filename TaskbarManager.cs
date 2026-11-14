@@ -542,6 +542,8 @@ namespace MonitorFader
             public string GroupKey;
             public List<WindowEntry> Windows = new List<WindowEntry>();
             public WindowEntry PrimaryWindow;
+            public PinnedTaskbarItem PinnedItem;
+            public bool IsPinned;
             public bool IsAnyForeground;
             public bool IsAllMinimized;
             public Rectangle Bounds;
@@ -874,6 +876,39 @@ namespace MonitorFader
                     known.Add(w.Handle);
             }
 
+            // Merge pinned taskbar items so they always remain on the taskbar even when closed
+            if (_settings.PinnedTaskbarItems != null)
+            {
+                foreach (var pinned in _settings.PinnedTaskbarItems)
+                {
+                    if (pinned == null || string.IsNullOrEmpty(pinned.GroupKey))
+                        continue;
+
+                    if (!_groupOrder.Exists(item => string.Equals(item, pinned.GroupKey, StringComparison.OrdinalIgnoreCase)))
+                        _groupOrder.Add(pinned.GroupKey);
+
+                    AppGroupSlot slot;
+                    if (grouped.TryGetValue(pinned.GroupKey, out slot))
+                    {
+                        slot.IsPinned = true;
+                        slot.PinnedItem = pinned;
+                    }
+                    else
+                    {
+                        slot = new AppGroupSlot
+                        {
+                            GroupKey = pinned.GroupKey,
+                            PrimaryWindow = null,
+                            PinnedItem = pinned,
+                            IsPinned = true,
+                            IsAnyForeground = false,
+                            IsAllMinimized = true
+                        };
+                        grouped[pinned.GroupKey] = slot;
+                    }
+                }
+            }
+
             // Maintain strictly fixed icon ordering like the native Windows taskbar.
             // Keep a short grace period if a group's HWND is still alive during transient focus/cloak/minimize states.
             var remainingOrder = new List<string>(_groupOrder.Count);
@@ -987,12 +1022,22 @@ namespace MonitorFader
         private Bitmap GetCachedGroupIcon(AppGroupSlot slot)
         {
             Bitmap bmp;
-            if (_groupIconCache.TryGetValue(slot.GroupKey, out bmp))
+            if (_groupIconCache.TryGetValue(slot.GroupKey, out bmp) && bmp != null)
                 return bmp;
 
             int iconSz = Math.Max(20, (int)Math.Round(24 * _scale));
-            bmp = WindowHelper.GetAppIconBitmap(slot.PrimaryWindow.Handle, slot.PrimaryWindow.RealExePath, iconSz);
-            _groupIconCache[slot.GroupKey] = bmp;
+            if (slot.PrimaryWindow != null)
+            {
+                bmp = WindowHelper.GetAppIconBitmap(slot.PrimaryWindow.Handle, slot.PrimaryWindow.RealExePath, iconSz);
+            }
+            if (bmp == null && slot.PinnedItem != null)
+            {
+                bmp = WindowHelper.PngBase64ToBitmap(slot.PinnedItem.IconBase64, iconSz);
+                if (bmp == null && !string.IsNullOrEmpty(slot.PinnedItem.ExePath))
+                    bmp = WindowHelper.GetAppIconBitmap(IntPtr.Zero, slot.PinnedItem.ExePath, iconSz);
+            }
+            if (bmp != null)
+                _groupIconCache[slot.GroupKey] = bmp;
             return bmp;
         }
 
@@ -1036,7 +1081,20 @@ namespace MonitorFader
                     slot.Bounds.Width,
                     slot.Bounds.Height);
 
-                if (_settings.TaskbarPreviewStyle == (int)TaskbarPreviewMode.TextTooltipOnly)
+                if (slot.Windows.Count == 0)
+                {
+                    _hoverTimer.Stop();
+                    _previewForm.HidePreview();
+                    string pinnedTip = (slot.PinnedItem != null && !string.IsNullOrEmpty(slot.PinnedItem.DisplayName))
+                        ? slot.PinnedItem.DisplayName
+                        : "Pinned Application";
+                    if (_lastTooltipText != pinnedTip)
+                    {
+                        _lastTooltipText = pinnedTip;
+                        _toolTip.SetToolTip(this, pinnedTip);
+                    }
+                }
+                else if (_settings.TaskbarPreviewStyle == (int)TaskbarPreviewMode.TextTooltipOnly)
                 {
                     _previewForm.HidePreview();
                     string tip = slot.Windows.Count == 1
@@ -1136,7 +1194,7 @@ namespace MonitorFader
                 return;
 
             var slot = _slots.Find(s => string.Equals(s.GroupKey, _hoveredGroupKey, StringComparison.OrdinalIgnoreCase));
-            if (slot != null)
+            if (slot != null && slot.Windows.Count > 0)
             {
                 _previewForm.ShowGroupPreview(slot.GroupKey, slot.Windows, _hoveredBtnRect, _monitor.Bounds, _scale, _lightTheme);
             }
@@ -1241,7 +1299,7 @@ namespace MonitorFader
                 return;
             }
 
-            IntPtr target = slotHit.PrimaryWindow.Handle;
+            IntPtr target = slotHit.PrimaryWindow != null ? slotHit.PrimaryWindow.Handle : IntPtr.Zero;
             bool shiftHeld = (ModifierKeys & Keys.Shift) == Keys.Shift;
 
             if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Left && shiftHeld))
@@ -1251,13 +1309,27 @@ namespace MonitorFader
                 _previewForm.HidePreview();
                 int behavior = _settings.TaskbarMiddleClickBehavior;
                 if (behavior == (int)TaskbarMiddleClickMode.OpenNewInstance)
-                    WindowHelper.OpenNewInstance(target);
-                else if (behavior == (int)TaskbarMiddleClickMode.CloseWindow)
+                {
+                    if (target != IntPtr.Zero)
+                        WindowHelper.OpenNewInstance(target);
+                    else if (slotHit.PinnedItem != null)
+                        WindowHelper.LaunchPinnedApp(slotHit.PinnedItem, _monitor.HMonitor);
+                }
+                else if (behavior == (int)TaskbarMiddleClickMode.CloseWindow && target != IntPtr.Zero)
                     WindowHelper.CloseWindow(target);
             }
             else if (e.Button == MouseButtons.Left)
             {
-                if (slotHit.Windows.Count == 1)
+                if (slotHit.Windows.Count == 0)
+                {
+                    _suppressHoverGroupKey = slotHit.GroupKey;
+                    Capture = false;
+                    NativeMethods.ReleaseCapture();
+                    _previewForm.HidePreview();
+                    if (slotHit.PinnedItem != null)
+                        WindowHelper.LaunchPinnedApp(slotHit.PinnedItem, _monitor.HMonitor);
+                }
+                else if (slotHit.Windows.Count == 1)
                 {
                     _suppressHoverGroupKey = slotHit.GroupKey;
                     Capture = false;
@@ -1311,11 +1383,99 @@ namespace MonitorFader
                 Capture = false;
                 NativeMethods.ReleaseCapture();
                 _previewForm.HidePreview();
-                if (slotHit.Windows.Count == 1)
-                    ShowWindowContextMenu(slotHit.PrimaryWindow, e.Location);
+                if (slotHit.Windows.Count == 0)
+                    ShowPinnedClosedContextMenu(slotHit, e.Location);
+                else if (slotHit.Windows.Count == 1)
+                    ShowWindowContextMenu(slotHit, slotHit.PrimaryWindow, e.Location);
                 else
                     ShowGroupContextMenu(slotHit, e.Location);
             }
+        }
+
+        private bool IsGroupPinned(string groupKey)
+        {
+            if (string.IsNullOrEmpty(groupKey) || _settings.PinnedTaskbarItems == null)
+                return false;
+            return _settings.PinnedTaskbarItems.Exists(p => p != null && string.Equals(p.GroupKey, groupKey, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void PinGroupSlot(AppGroupSlot slot)
+        {
+            if (slot == null || string.IsNullOrEmpty(slot.GroupKey))
+                return;
+            if (IsGroupPinned(slot.GroupKey))
+                return;
+
+            if (_settings.PinnedTaskbarItems == null)
+                _settings.PinnedTaskbarItems = new List<PinnedTaskbarItem>();
+
+            IntPtr hWnd = slot.PrimaryWindow != null ? slot.PrimaryWindow.Handle : IntPtr.Zero;
+            string exePath = slot.PrimaryWindow != null ? slot.PrimaryWindow.RealExePath : (slot.PinnedItem != null ? slot.PinnedItem.ExePath : null);
+            string title = slot.PrimaryWindow != null ? slot.PrimaryWindow.Title : null;
+            string aumid = WindowHelper.ResolveAppUserModelId(hWnd, exePath);
+            string displayName = WindowHelper.GetFriendlyAppName(hWnd, exePath, title);
+            Bitmap iconBmp = GetCachedGroupIcon(slot);
+            string iconBase64 = WindowHelper.BitmapToPngBase64(iconBmp);
+
+            _settings.PinnedTaskbarItems.Add(new PinnedTaskbarItem
+            {
+                GroupKey = slot.GroupKey,
+                ExePath = exePath,
+                Aumid = aumid,
+                DisplayName = displayName,
+                IconBase64 = iconBase64
+            });
+            _settings.Save();
+            if (_refreshAction != null) _refreshAction();
+        }
+
+        private void UnpinGroupSlot(AppGroupSlot slot)
+        {
+            if (slot == null || string.IsNullOrEmpty(slot.GroupKey) || _settings.PinnedTaskbarItems == null)
+                return;
+
+            _settings.PinnedTaskbarItems.RemoveAll(p => p != null && string.Equals(p.GroupKey, slot.GroupKey, StringComparison.OrdinalIgnoreCase));
+            if (slot.Windows.Count == 0)
+            {
+                _groupOrder.RemoveAll(k => string.Equals(k, slot.GroupKey, StringComparison.OrdinalIgnoreCase));
+            }
+            _settings.Save();
+            if (_refreshAction != null) _refreshAction();
+        }
+
+        private ToolStripMenuItem CreatePinMenuItem(AppGroupSlot slot)
+        {
+            bool pinned = IsGroupPinned(slot.GroupKey);
+            var item = new ToolStripMenuItem(pinned ? "Unpin from Taskbar" : "Pin to Taskbar");
+            item.Click += (s, e) =>
+            {
+                if (pinned)
+                    UnpinGroupSlot(slot);
+                else
+                    PinGroupSlot(slot);
+            };
+            return item;
+        }
+
+        private void ShowPinnedClosedContextMenu(AppGroupSlot slot, Point pt)
+        {
+            var menu = new ContextMenuStrip();
+            string title = (slot.PinnedItem != null && !string.IsNullOrEmpty(slot.PinnedItem.DisplayName))
+                ? ("Open " + slot.PinnedItem.DisplayName)
+                : "Open";
+            var openItem = new ToolStripMenuItem(title);
+            openItem.Font = new Font(openItem.Font, FontStyle.Bold);
+            openItem.Click += (s, e) =>
+            {
+                if (slot.PinnedItem != null)
+                    WindowHelper.LaunchPinnedApp(slot.PinnedItem, _monitor.HMonitor);
+            };
+
+            menu.Items.Add(openItem);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(CreatePinMenuItem(slot));
+            ApplyMenuTheme(menu);
+            menu.Show(this, pt);
         }
 
         private void ApplyMenuTheme(ContextMenuStrip menu)
@@ -1343,7 +1503,7 @@ namespace MonitorFader
             menu.Show(this, pt);
         }
 
-        private void ShowWindowContextMenu(WindowEntry win, Point pt)
+        private void ShowWindowContextMenu(AppGroupSlot slot, WindowEntry win, Point pt)
         {
             var menu = new ContextMenuStrip();
             var focusItem = new ToolStripMenuItem(win.IsMinimized ? "Restore" : "Switch To");
@@ -1362,6 +1522,8 @@ namespace MonitorFader
             var newInstItem = new ToolStripMenuItem("Open New Instance");
             newInstItem.Click += (s, e) => WindowHelper.OpenNewInstance(win.Handle);
 
+            var pinItem = CreatePinMenuItem(slot);
+
             var closeItem = new ToolStripMenuItem("Close Window");
             closeItem.Click += (s, e) => WindowHelper.CloseWindow(win.Handle);
 
@@ -1371,6 +1533,7 @@ namespace MonitorFader
             menu.Items.Add(minItem);
             menu.Items.Add(maxItem);
             menu.Items.Add(newInstItem);
+            menu.Items.Add(pinItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(closeItem);
             ApplyMenuTheme(menu);
@@ -1396,6 +1559,8 @@ namespace MonitorFader
             var newInstItem = new ToolStripMenuItem("Open New Instance");
             newInstItem.Click += (s, e) => WindowHelper.OpenNewInstance(group.PrimaryWindow.Handle);
 
+            var pinItem = CreatePinMenuItem(group);
+
             var moveAllItem = new ToolStripMenuItem("Move All to Next Monitor");
             moveAllItem.Click += (s, e) =>
             {
@@ -1418,6 +1583,7 @@ namespace MonitorFader
             };
 
             menu.Items.Add(newInstItem);
+            menu.Items.Add(pinItem);
             menu.Items.Add(moveAllItem);
             menu.Items.Add(minAllItem);
             menu.Items.Add(closeAllItem);
@@ -1537,22 +1703,25 @@ namespace MonitorFader
                         }
                     }
 
-                    // Bottom pill indicator
-                    float indH = Math.Max(2.5f, 3f * _scale);
-                    float indW = slot.IsAnyForeground
-                        ? 16f * _scale
-                        : (isGrouped ? 10f * _scale : (slot.IsAllMinimized ? 4f * _scale : 6f * _scale));
-                    float indX = mainRect.X + (mainRect.Width - indW) / 2f;
-                    float indY = mainRect.Bottom - indH - 1.5f * _scale;
-                    Color indColor = slot.IsAnyForeground
-                        ? (_lightTheme ? Color.FromArgb(255, 0, 103, 192) : Color.FromArgb(255, 96, 205, 255))
-                        : (_lightTheme ? Color.FromArgb(180, 110, 118, 128) : Color.FromArgb(185, 155, 163, 175));
-
-                    var indRect = new RectangleF(indX, indY, indW, indH);
-                    using (var indPath = WindowHelper.CreateRoundedRectPath(indRect, indH / 2f))
-                    using (var indBrush = new SolidBrush(indColor))
+                    // Bottom pill indicator (shown only when the app has at least one open window, matching Windows 11)
+                    if (slot.Windows.Count > 0)
                     {
-                        g.FillPath(indBrush, indPath);
+                        float indH = Math.Max(2.5f, 3f * _scale);
+                        float indW = slot.IsAnyForeground
+                            ? 16f * _scale
+                            : (isGrouped ? 10f * _scale : (slot.IsAllMinimized ? 4f * _scale : 6f * _scale));
+                        float indX = mainRect.X + (mainRect.Width - indW) / 2f;
+                        float indY = mainRect.Bottom - indH - 1.5f * _scale;
+                        Color indColor = slot.IsAnyForeground
+                            ? (_lightTheme ? Color.FromArgb(255, 0, 103, 192) : Color.FromArgb(255, 96, 205, 255))
+                            : (_lightTheme ? Color.FromArgb(180, 110, 118, 128) : Color.FromArgb(185, 155, 163, 175));
+
+                        var indRect = new RectangleF(indX, indY, indW, indH);
+                        using (var indPath = WindowHelper.CreateRoundedRectPath(indRect, indH / 2f))
+                        using (var indBrush = new SolidBrush(indColor))
+                        {
+                            g.FillPath(indBrush, indPath);
+                        }
                     }
 
                     // Centered crisp app icon
@@ -1561,7 +1730,8 @@ namespace MonitorFader
                     {
                         int iconSz = Math.Max(20, (int)Math.Round(24 * _scale));
                         int ix = (int)Math.Round(mainRect.X + (mainRect.Width - iconSz) / 2f);
-                        int iy = (int)Math.Round(mainRect.Y + (mainRect.Height - iconSz) / 2f - 1.5f * _scale);
+                        float yOffset = slot.Windows.Count > 0 ? -1.5f * _scale : 0f;
+                        int iy = (int)Math.Round(mainRect.Y + (mainRect.Height - iconSz) / 2f + yOffset);
                         g.DrawImage(icBmp, ix, iy, iconSz, iconSz);
                     }
                 }

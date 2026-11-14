@@ -4,8 +4,9 @@ A lightweight standalone Windows multi-monitor utility (inspired by DisplayFusio
 
 ## Download
 
-- **[Download Latest Release (`MonitorFader.exe` / `MonitorFader-v1.0.0.zip`)](https://github.com/AbdulrahmanFa2hy/monitor-Fader-App/releases/latest)**
-- Single portable `.exe` (~128 KB) — no installation or extra runtime required on Windows 10/11.
+- **[Download Latest Release](https://github.com/AbdulrahmanFa2hy/monitor-Fader-App/releases/latest)**
+  - **`MonitorFader-Setup.exe`** — Standard Windows installer (creates Start Menu & Desktop shortcuts, Startup entry, and Add/Remove Programs uninstaller).
+  - **`MonitorFader.exe`** / **`MonitorFader-v1.0.0.zip`** — Standalone portable `.exe` with zero external dependencies on Windows 10/11.
 
 ## Features
 
@@ -44,4 +45,4 @@ Run the PowerShell build script (uses the built-in .NET Framework `csc.exe`, no 
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-This outputs `MonitorFader.exe`.
+This outputs `MonitorFader.exe` and `MonitorFader-Setup.exe`.
